@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ego-calibration"
+version = "3.1.0"
+description = "Portable camera inspection and calibration workbench"
+requires-python = ">=3.10"
+dependencies = [
+  "libusb-package==1.0.30.0",
+  "opencv-python-headless==4.14.0.94",
+  "pyusb==1.3.1",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+desktop = ["PySide6-Essentials==6.9.2", "comtypes==1.4.16; platform_system == 'Windows'"]
+depthai = ["depthai==2.32.0.0"]
+
+[project.scripts]
+camera-workbench = "ego_calibration.webapp:main"
+
+[project.gui-scripts]
+ego-calibration = "ego_calibration.webapp:main"
+ego-calibration-desktop = "ego_calibration.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ego_calibration = ["resources/*.json", "resources/*.yaml", "web/*.html", "web/*.css", "web/*.js", "web/*.svg", "backends/*.py", "backends/*.sh", "backends/flash_tools/*", "backends/ego_std_delivery/*", "backends/ego_std_delivery/scripts/*", "backends/ego_std_delivery/bin/*", "backends/ego_std_delivery/docker/*", "backends/ego_std_delivery/patches/*", "backends/ego_std_delivery/third_party_notices/*"]

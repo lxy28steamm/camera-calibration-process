@@ -1,0 +1,5 @@
+*
+!kalibr_source/
+!kalibr_source/**
+!docker/
+!docker/Dockerfile

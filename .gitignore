@@ -1,0 +1,17 @@
+/.venv/
+/.build-dependencies/
+/.cache/
+/.ruff_cache/
+/.pytest_cache/
+/build/
+/dist/*
+!/dist/.gitkeep
+/data/
+/config/local.env
+.env
+.env.*
+!.env.example
+*.egg-info/
+*.spec
+__pycache__/
+*.py[cod]

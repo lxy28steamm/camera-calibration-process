@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "reservation_source": "",
+  "dedicated_for_calibration": false,
+  "device_match": {
+    "vid": 7119,
+    "pid": 10436,
+    "bcd_device": 4644,
+    "asic": 110,
+    "flash_bytes": 524288
+  },
+  "first_sector": null,
+  "sector_count": null,
+  "write_mode": null
+}

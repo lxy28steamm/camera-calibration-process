@@ -1,0 +1,6 @@
+# Ego-Lite default AprilGrid: tag36h11, IDs 0-35.
+target_type: aprilgrid
+tagCols: 6
+tagRows: 6
+tagSize: 0.055
+tagSpacing: 0.3

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "package": "kalibr-h264-imu-demo",
+  "docker_image_archive_included": false,
+  "docker_image_tag": "kalibr-h264-imu-demo:20260805",
+  "kalibr_commit": "1f60227442d25e36365ef5f72cd80b9666d73467",
+  "sample": {
+    "path": "sample/a01.h264",
+    "sha256": "fa61f00d4e44e79fc42f01a67e53a347178590c3cd5babe3fcaf14d8c9ae9d53",
+    "records_found": 2363,
+    "invalid_records": 0,
+    "imu_samples": 77772
+  },
+  "reference_result": {
+    "final_yaml": "expected_output/calibration_stride3-camchain-imucam.yaml",
+    "imu_report": "expected_output/calibration_stride3-report-imucam.pdf",
+    "camera_report": "expected_output/calibration_stride3-report-cam.pdf",
+    "mean_timeshift_cam_imu_s": 0.00041291422325670594,
+    "baseline_m": 0.05995446107311736
+  }
+}

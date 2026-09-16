@@ -1,0 +1,7 @@
+# Generic Kalibr example fallback (ADIS16448), not measured for Ego-Lite BNO086.
+accelerometer_noise_density: 0.006
+accelerometer_random_walk: 0.0002
+gyroscope_noise_density: 0.0004
+gyroscope_random_walk: 4.0e-06
+rostopic: /imu0
+update_rate: 200.0

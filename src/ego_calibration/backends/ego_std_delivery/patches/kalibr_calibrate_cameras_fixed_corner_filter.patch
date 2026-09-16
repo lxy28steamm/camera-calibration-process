@@ -1,0 +1,209 @@
+diff --git a/aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras b/aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras
+index dc6a909..c84652f 100755
+--- a/aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras
++++ b/aslam_offline_calibration/kalibr/python/kalibr_calibrate_cameras
+@@ -30,6 +30,128 @@ def initBagDataset(bagfile, topic, from_to, freq):
+     print("\tNumber of images: {0}".format(reader.numImages()))
+     return reader
+ 
++
++def isValidReprojectionResidual(reproj):
++    return not np.all(reproj == np.array([None, None]))
++
++
++def maximumCornerReprojectionResidual(calibrator):
++    max_residual = 0.0
++    valid_count = 0
++    for cidx in range(0, len(calibrator.cameras)):
++        corners, reprojs, rerrs = kcc.getReprojectionErrors(calibrator, cidx)
++        for batch_errors in rerrs:
++            if batch_errors is None:
++                continue
++            for reproj in batch_errors:
++                if isValidReprojectionResidual(reproj):
++                    max_residual = max(
++                        max_residual,
++                        np.linalg.norm(np.asarray(reproj, dtype=float)),
++                    )
++                    valid_count += 1
++    return max_residual, valid_count
++
++
++def runFixedCornerResidualFiltering(calibrator, parsed, removedOutlierCorners):
++    threshold = parsed.max_corner_reproj_px
++    print("")
++    print("Starting fixed corner residual filtering at {0:.6f} px...".format(threshold))
++    total_removed = 0
++    converged = False
++
++    for round_idx in range(0, parsed.max_corner_filter_rounds):
++        num_batches = calibrator.estimator.getNumBatches()
++        if num_batches == 0:
++            sm.logError("Fixed corner filtering removed every calibration view.")
++            break
++
++        round_removed = 0
++        progress_filter = sm.Progress2(num_batches)
++        progress_filter.sample()
++        batches_to_check = list(range(0, num_batches))
++        batches_to_check.reverse()
++
++        for batch_id in batches_to_check:
++            cornerRemovalList_allCams = list()
++            camerasInBatch = list(calibrator.views[batch_id].rerrs.keys())
++            for cidx in camerasInBatch:
++                corners, reprojs, rerrs = kcc.getReprojectionErrors(calibrator, cidx)
++                cornerRemovalList = list()
++                for pidx, reproj in enumerate(rerrs[batch_id]):
++                    if not isValidReprojectionResidual(reproj):
++                        continue
++                    reprojection_norm = np.linalg.norm(np.asarray(reproj, dtype=float))
++                    if reprojection_norm >= threshold:
++                        cornerRemovalList.append(pidx)
++                        removedOutlierCorners.append(
++                            (
++                                cidx,
++                                calibrator.views[batch_id].rerrs[cidx][pidx].getMeasurement(),
++                            )
++                        )
++                        if parsed.verbose or parsed.doPlotOutliers:
++                            sm.logInfo(
++                                "Fixed outlier on batch {0}, cam{1}, corner {2}: "
++                                "norm={3:.6f} >= {4:.6f} px".format(
++                                    batch_id,
++                                    cidx,
++                                    pidx,
++                                    reprojection_norm,
++                                    threshold,
++                                )
++                            )
++                cornerRemovalList_allCams.append((cidx, cornerRemovalList))
++
++            removeCount = sum(
++                [len(removelist) for cidx, removelist in cornerRemovalList_allCams]
++            )
++            if removeCount > 0:
++                original_batch = calibrator.views[batch_id]
++                new_batch = kcc.removeCornersFromBatch(
++                    original_batch,
++                    cornerRemovalList_allCams,
++                    useBlakeZissermanMest=parsed.doBlakeZisserman,
++                )
++                calibrator.estimator.removeBatch(calibrator.views[batch_id])
++                calibrator.views[batch_id] = new_batch
++                rval = calibrator.estimator.addBatch(new_batch, False)
++                if not rval.batchAccepted:
++                    sm.logDebug(
++                        "fixed-filtered view rejected; removing it from optimization..."
++                    )
++                    calibrator.views.remove(calibrator.views[batch_id])
++                round_removed += removeCount
++                total_removed += removeCount
++            progress_filter.sample()
++
++        max_residual, valid_count = maximumCornerReprojectionResidual(calibrator)
++        print(
++            "Fixed filter round {0}/{1}: removed {2} corners; "
++            "remaining max residual={3:.6f} px over {4} corners".format(
++                round_idx + 1,
++                parsed.max_corner_filter_rounds,
++                round_removed,
++                max_residual,
++                valid_count,
++            )
++        )
++        if valid_count > 0 and max_residual < threshold:
++            converged = True
++            break
++        if round_removed == 0:
++            break
++
++    final_max, final_count = maximumCornerReprojectionResidual(calibrator)
++    if not converged and final_count > 0 and final_max >= threshold:
++        sm.logWarn(
++            "Fixed corner filtering did not converge below {0:.6f} px; "
++            "remaining max residual is {1:.6f} px after {2} rounds.".format(
++                threshold, final_max, parsed.max_corner_filter_rounds
++            )
++        )
++    return total_removed, final_max, final_count
++
+ #available models
+ cameraModels = { 'pinhole-radtan': acvb.DistortedPinhole,
+                  'pinhole-equi':   acvb.EquidistantPinhole,
+@@ -101,6 +223,8 @@ def parseArgs():
+     outlierSettings = parser.add_argument_group('Outlier filtering options')
+     outlierSettings.add_argument('--no-outliers-removal', action='store_false', default=True, dest='removeOutliers', help='Disable corner outlier filtering')
+     outlierSettings.add_argument('--no-final-filtering', action='store_false', default=True, dest='allowEndFiltering', help='Disable filtering after all views have been processed.')
++    outlierSettings.add_argument('--max-corner-reproj-px', type=float, default=None, dest='max_corner_reproj_px', help='During final filtering, remove every corner whose Euclidean reprojection residual is greater than or equal to this fixed threshold [px].')
++    outlierSettings.add_argument('--max-corner-filter-rounds', type=int, default=10, dest='max_corner_filter_rounds', help='Maximum fixed-threshold convergence rounds during final corner filtering (default: %(default)s).')
+     outlierSettings.add_argument('--min-views-outlier', type=int, default=20, dest='minViewOutlier', help='Number of raw views to initialize statistics (default: %(default)s)')
+     outlierSettings.add_argument('--use-blakezisserman', action='store_true', dest='doBlakeZisserman', help='Enable the Blake-Zisserman m-estimator')
+     outlierSettings.add_argument('--plot-outliers', action='store_true', dest='doPlotOutliers', help='Plot the detect outliers during extraction (this could be slow)')
+@@ -131,6 +255,14 @@ def parseArgs():
+     if parsed.minViewOutlier<1:
+         sm.logError("Please specify a positive integer (--min-views-outlier).")
+         sys.exit(2)
++
++    if parsed.max_corner_reproj_px is not None and parsed.max_corner_reproj_px <= 0.0:
++        sm.logError("--max-corner-reproj-px must be greater than zero.")
++        sys.exit(2)
++
++    if parsed.max_corner_filter_rounds < 1:
++        sm.logError("--max-corner-filter-rounds must be a positive integer.")
++        sys.exit(2)
+     
+     #there is a with the gtk plot widget, so we cant plot if we have opencv windows open...
+     #--> disable the plots in these special situations
+@@ -316,7 +448,7 @@ def main():
+                     elif runEndFiltering:
+                         #check all batches again after all views have been processed
+                         print("");print("")
+-                        print("All views have been processed.\n\nStarting final outlier filtering...")
++                        print("All views have been processed.\n\nStarting final adaptive outlier filtering...")
+                         batches_to_check=list(range(0, calibrator.estimator.getNumBatches()))
+                         progress_filter = sm.Progress2(len(batches_to_check)); progress_filter.sample()
+                     else:
+@@ -341,12 +473,22 @@ def main():
+                             #select corners to remove
+                             cornerRemovalList=list()
+                             for pidx, reproj in enumerate(rerrs[batch_id]):
+-                                if (not np.all(reproj==np.array([None,None]))) and (abs(reproj[0]) > se_threshold[0] or abs(reproj[1]) > se_threshold[1]):
++                                valid_reprojection = not np.all(reproj==np.array([None,None]))
++                                if valid_reprojection:
++                                    is_outlier = abs(reproj[0]) > se_threshold[0] or abs(reproj[1]) > se_threshold[1]
++                                    threshold_text = "abs=({0:.6f},{1:.6f}) > ({2:.6f},{3:.6f})".format(
++                                        abs(reproj[0]), abs(reproj[1]), se_threshold[0], se_threshold[1]
++                                    )
++                                else:
++                                    is_outlier = False
++                                    threshold_text = "invalid residual"
++
++                                if is_outlier:
+                                     cornerRemovalList.append(pidx)
+                                     
+                                     #display the corners info
+                                     if parsed.verbose or parsed.doPlotOutliers:
+-                                        sm.logInfo( "Outlier detected on view {4} with idx {5} (rerr=({0}, {1}) > ({2},{3}) )".format(reproj[0], reproj[1], se_threshold[0], se_threshold[1], view_id, pidx))
++                                        sm.logInfo( "Outlier detected on view {0} with idx {1} ({2})".format(view_id, pidx, threshold_text))
+                                         sm.logInfo( "Predicted: {0}".format(calibrator.views[batch_id].rerrs[cidx][pidx].getPredictedMeasurement()) )
+                                         sm.logInfo( "Measured: {0}".format(calibrator.views[batch_id].rerrs[cidx][pidx].getMeasurement()) )
+ 
+@@ -387,7 +529,16 @@ def main():
+                         #start and end filtering progress bar
+                         if len(batches_to_check)>1:
+                             progress_filter.sample()
+-                            
++
++            if (
++                parsed.removeOutliers
++                and parsed.allowEndFiltering
++                and parsed.max_corner_reproj_px is not None
++            ):
++                runFixedCornerResidualFiltering(
++                    calibrator, parsed, removedOutlierCorners
++                )
++
+             #final output
+             print("")
+             print("")

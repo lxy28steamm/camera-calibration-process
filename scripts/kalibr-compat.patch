@@ -1,0 +1,136 @@
+diff --git a/Schweizer-Messer/numpy_eigen/CMakeLists.txt b/Schweizer-Messer/numpy_eigen/CMakeLists.txt
+--- a/Schweizer-Messer/numpy_eigen/CMakeLists.txt
++++ b/Schweizer-Messer/numpy_eigen/CMakeLists.txt
+@@ -6,10 +6,20 @@ find_package(catkin REQUIRED COMPONENTS python_module)
+ find_package(Boost REQUIRED COMPONENTS system)
+ find_package(Eigen3 REQUIRED)
++execute_process(
++  COMMAND ${PYTHON_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
++  OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
++  OUTPUT_STRIP_TRAILING_WHITESPACE
++  RESULT_VARIABLE NUMPY_INCLUDE_RESULT
++)
++if(NOT NUMPY_INCLUDE_RESULT EQUAL 0 OR NOT EXISTS "${NUMPY_INCLUDE_DIR}")
++  message(FATAL_ERROR "Unable to locate NumPy headers")
++endif()
+ 
+ catkin_python_setup()
+ 
+ add_definitions(${EIGEN_DEFINITIONS})
+ include_directories(include ${EIGEN3_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
++include_directories(${NUMPY_INCLUDE_DIR})
+ include_directories("${PROJECT_SOURCE_DIR}/include/numpy_eigen")
+ 
+ catkin_package(
+@@ -43,9 +53,11 @@ target_link_libraries(${PROJECT_NAME}
+                       ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+                       
+ INCLUDE(src/autogen_test_files.cmake)
+-add_python_export_library(${PROJECT_NAME}_test 
+-      ${PROJECT_SOURCE_DIR}/python/${PROJECT_NAME} ${AUTOGEN_TEST_FILES}
+-  )
++if(CATKIN_ENABLE_TESTING)
++  add_python_export_library(${PROJECT_NAME}_test
++        ${PROJECT_SOURCE_DIR}/python/${PROJECT_NAME} ${AUTOGEN_TEST_FILES}
++    )
++endif()
+ 
+ #############
+ ## Testing ##
+diff --git a/Schweizer-Messer/python_module/cmake/add_python_export_library.cmake b/Schweizer-Messer/python_module/cmake/add_python_export_library.cmake
+--- a/Schweizer-Messer/python_module/cmake/add_python_export_library.cmake
++++ b/Schweizer-Messer/python_module/cmake/add_python_export_library.cmake
+@@ -86,7 +86,12 @@ ${SETUP_PY_TEXT}
+       list(APPEND BOOST_COMPONENTS python27)
+     endif()
+   else()
+-    list(APPEND BOOST_COMPONENTS python38)
++    # Keep the component in sync with the Python interpreter in the ROS
++    # environment (the original Kalibr code hard-coded python38).
++    string(REGEX REPLACE "^([0-9]+)\\.([0-9]+).*" "\\1\\2"
++           PYTHON_BOOST_SUFFIX "${PYTHONLIBS_VERSION_STRING}")
++    set(PYTHON_BOOST_COMPONENT "python${PYTHON_BOOST_SUFFIX}")
++    list(APPEND BOOST_COMPONENTS ${PYTHON_BOOST_COMPONENT})
+   endif()
+   find_package(Boost REQUIRED COMPONENTS ${BOOST_COMPONENTS}) 
+ 
+@@ -147,4 +152,3 @@ ${SETUP_PY_TEXT}
+   set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${AMCF}") 
+   
+ ENDFUNCTION()
+-
+diff --git a/Schweizer-Messer/sm_boost/include/boost/portable_binary_archive.hpp b/Schweizer-Messer/sm_boost/include/boost/portable_binary_archive.hpp
+--- a/Schweizer-Messer/sm_boost/include/boost/portable_binary_archive.hpp
++++ b/Schweizer-Messer/sm_boost/include/boost/portable_binary_archive.hpp
+@@ -28,7 +28,7 @@
+ #endif
+ 
+ #include <boost/archive/basic_archive.hpp>
+-#include <boost/detail/endian.hpp>
++#include <boost/endian.hpp>
+ 
+ 
+ namespace boost {
+diff --git a/Schweizer-Messer/sm_boost/src/portable_binary_oarchive.cpp b/Schweizer-Messer/sm_boost/src/portable_binary_oarchive.cpp
+--- a/Schweizer-Messer/sm_boost/src/portable_binary_oarchive.cpp
++++ b/Schweizer-Messer/sm_boost/src/portable_binary_oarchive.cpp
+@@ -9,7 +9,7 @@
+ //  See http://www.boost.org for updates, documentation, and revision history.
+ 
+ #include <ostream>
+-#include <boost/detail/endian.hpp>
++#include <boost/endian.hpp>
+ #include <boost/portable_binary_oarchive.hpp>
+ 
+ namespace boost {
+diff --git a/aslam_offline_calibration/ethz_apriltag2/CMakeLists.txt b/aslam_offline_calibration/ethz_apriltag2/CMakeLists.txt
+--- a/aslam_offline_calibration/ethz_apriltag2/CMakeLists.txt
++++ b/aslam_offline_calibration/ethz_apriltag2/CMakeLists.txt
+@@ -19,8 +19,9 @@ file(GLOB SOURCE_FILES "src/*.cc")
+ add_library(${PROJECT_NAME}  ${SOURCE_FILES})
+ target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${catkin_LIBRARIES})
+ 
+-#demo
+-if(NOT APPLE)
++#demo (not required by Kalibr and needs the optional system libv4l headers)
++option(ETHZ_APRILTAG_BUILD_DEMO "Build the standalone AprilTag camera demo" OFF)
++if(NOT APPLE AND ETHZ_APRILTAG_BUILD_DEMO)
+   add_executable(apriltags_demo src/example/apriltags_demo.cpp src/example/Serial.cpp)
+   target_link_libraries(apriltags_demo ${PROJECT_NAME} v4l2)
+ endif()
+diff --git a/aslam_offline_calibration/kalibr/python/kalibr_camera_calibration/CameraUtils.py b/aslam_offline_calibration/kalibr/python/kalibr_camera_calibration/CameraUtils.py
+--- a/aslam_offline_calibration/kalibr/python/kalibr_camera_calibration/CameraUtils.py
++++ b/aslam_offline_calibration/kalibr/python/kalibr_camera_calibration/CameraUtils.py
+@@ -264,7 +264,9 @@ def plotAllReprojectionErrors(cself, cam_id, fno=1, noShow=False, clearFigure=True
+ 
+     SM = pl.cm.ScalarMappable(pl.cm.colors.Normalize(0.0,len(cself.views)), pl.cm.jet)
+     SM.set_array(np.arange(len(cself.views)));
+-    cb = pl.colorbar(SM)
++    # Matplotlib >= 3.8 requires an explicit axes for a standalone
++    # ScalarMappable; this plot belongs to the current figure axes.
++    cb = pl.colorbar(SM, ax=f.gca())
+     cb.set_label('image index')
+     if not noShow:
+         pl.show()
+
+diff --git a/aslam_offline_calibration/kalibr/python/kalibr_common/ConfigReader.py b/aslam_offline_calibration/kalibr/python/kalibr_common/ConfigReader.py
+--- a/aslam_offline_calibration/kalibr/python/kalibr_common/ConfigReader.py
++++ b/aslam_offline_calibration/kalibr/python/kalibr_common/ConfigReader.py
+@@ -68 +68,2 @@ class AslamCamera(object):
+-                self.camera = cv.PinholeCameraGeometry(proj)
++                # Keep the same attribute used by all other pinhole models.
++                self.geometry = cv.PinholeCameraGeometry(proj)
+diff --git a/aslam_offline_calibration/kalibr/python/kalibr_imu_camera_calibration/IccPlots.py b/aslam_offline_calibration/kalibr/python/kalibr_imu_camera_calibration/IccPlots.py
+--- a/aslam_offline_calibration/kalibr/python/kalibr_imu_camera_calibration/IccPlots.py
++++ b/aslam_offline_calibration/kalibr/python/kalibr_imu_camera_calibration/IccPlots.py
+@@ -283,7 +283,9 @@ def plotReprojectionScatter(cself, cam_id, fno=1, clearFigure=True, noShow=False
+     pl.ylabel('error y ($pix$)')
+     SM = pl.cm.ScalarMappable(pl.cm.colors.Normalize(0.0,numImages), pl.cm.jet)
+     SM.set_array(np.arange(numImages));
+-    cb = pl.colorbar(SM)
++    # Matplotlib >= 3.8 no longer infers the axes from a ScalarMappable
++    # that has not been attached to an axes. Bind the colorbar explicitly.
++    cb = pl.colorbar(SM, ax=f.gca())
+     cb.set_label('image index')
+     if not noShow:
+         pl.show()

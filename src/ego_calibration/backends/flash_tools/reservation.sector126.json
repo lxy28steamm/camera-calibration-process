@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "selection_mode": "user_selected_blank",
+  "reservation_source": "2026-09-15 用户要求默认选择 127 以外的空白扇区，重新标定后手动试写。选择 sector 126；已有完整备份 usb-1bcf-28c4-bcd1224-20260915.bin 中该扇区全为 FF。此选择未经厂家确认，不保证固件兼容或升级保留。",
+  "dedicated_for_calibration": false,
+  "device_match": {
+    "vid": 7119,
+    "pid": 10436,
+    "bcd_device": 4644,
+    "asic": 110,
+    "flash_bytes": 524288
+  },
+  "first_sector": 126,
+  "sector_count": 1,
+  "write_mode": "rom_same_handle"
+}
