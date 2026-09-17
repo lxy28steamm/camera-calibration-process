@@ -1,13 +1,13 @@
-# Linux 小主机部署（3.1.0）
+# Linux 小主机部署（3.2.0）
 
 适用：x86_64 Ubuntu 22.04 / 24.04。发布二进制在 Ubuntu 22.04 / GLIBC 2.35 环境构建。相机接在运行服务的小主机上，浏览器可在其他电脑上打开。
 
 ## 解压即可迁移的部分
 
-将 `camera-workbench-3.1.0-linux-x86_64.tar.gz` 复制到小主机任意可写目录：
+将 `camera-workbench-3.2.0-linux-x86_64.tar.gz` 复制到小主机任意可写目录：
 
 ```bash
-tar -xzf camera-workbench-3.1.0-linux-x86_64.tar.gz
+tar -xzf camera-workbench-3.2.0-linux-x86_64.tar.gz
 cd camera-workbench
 sha256sum -c SHA256SUMS
 bash start-workbench.sh --doctor
@@ -50,7 +50,7 @@ ssh -L 8765:127.0.0.1:8765 用户名@小主机IP
 | --- | --- |
 | 普通 Linux V4L2 / UVC 单目 | 扫描、预览、实际尺寸、帧率/画面检查、MJPEG/H.264 原码或 YUYV→FFV1 无损录制、单目标定、固定参数复测 |
 | 左右等宽拼接 UVC 双目 | 手选布局，导入真实 JSON / Kalibr 双目 YAML，双目重投影、极线、尺度与覆盖复测 |
-| Ego-Std | 标定读取、通用复测；独立 H.264 / SEI → bag → 双目与相机—IMU 标定、报告导出 |
+| Ego-Std | 标定读取、通用复测；独立 H.264 / SEI → bag → 双目与相机—IMU 标定、报告导出；Linux 专用 Schema v2 备份写入回读 |
 | Ego-Lite / DepthAI | EEPROM 读取、双目复测；独立同步采集、相机—IMU 联合标定、EEPROM 备份写入回读 |
 | Dex / Sunplus 1bcf:28c4 | 通用单目流程，加专用 Flash 信息、备份、读取、显式确认写入和回读校验 |
 | 离线单目 / 拼接双目视频 | 导入后标定或复测，可在没有相机时处理 |

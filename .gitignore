@@ -15,3 +15,5 @@
 *.spec
 __pycache__/
 *.py[cod]
+
+/config/*.secret

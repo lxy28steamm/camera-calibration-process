@@ -13,7 +13,7 @@ bash start-workbench.sh --no-browser
 
 详见 [Linux 部署与完整操作流程](docs/LINUX.md)，包含局域网/SSH 访问、真实尺寸、相机支持范围、标定板参数、复测标准、Kalibr 部署和旧数据迁移。
 
-3.1.0 网页入口：**相机复测**（普通单目 / 双目）、**Dex / 单目标定**、**Ego-Lite 标定**、**Ego-Std 标定**。Ego-Lite 提供同步图像与 IMU 采集、联合标定、EEPROM 备份写入回读；Ego-Std 集成指定 `customer_delivery` 的 H.264 / YCTC SEI → ROS bag → 双目 → 相机—IMU 求解与报告。各自数据和设备写入协议分开。操作见 [各类相机标定流程](docs/CALIBRATION_WORKFLOWS.md)。
+3.2.0 网页入口：**相机复测**（普通单目 / 双目）、**Dex / 单目标定**、**Ego-Lite 标定**、**Ego-Std 标定**。Ego-Lite 提供同步图像与 IMU 采集、联合标定、EEPROM 备份写入回读；Ego-Std 集成指定 `customer_delivery` 的 H.264 / YCTC SEI → ROS bag → 双目 → 相机—IMU 求解、报告，以及专用标定备份、写入、激活和回读。各自数据和设备写入协议分开。操作见 [各类相机标定流程](docs/CALIBRATION_WORKFLOWS.md)。
 
 代码结构：
 

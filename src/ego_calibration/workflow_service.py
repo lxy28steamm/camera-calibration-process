@@ -61,7 +61,7 @@ class WorkflowService:
     def files(self, directory):
         return [{"name": p.relative_to(directory).as_posix(), "id": self.file_id(p)}
                 for p in sorted(directory.rglob('*')) if p.is_file() and p.suffix.lower() in
-                ('.yaml', '.yml', '.json', '.txt', '.log', '.pdf', '.csv', '.bag', '.zip')]
+                ('.yaml', '.yml', '.json', '.txt', '.log', '.pdf', '.csv', '.bag', '.zip', '.bin')]
 
     def state(self):
         with self.lock:

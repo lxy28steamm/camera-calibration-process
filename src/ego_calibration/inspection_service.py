@@ -240,7 +240,7 @@ class InspectionService:
 
     def dispatch(self, action: str, data: dict[str, Any]) -> None:
         if action == "stop":
-            if self.operation in ("dex_flash_write", "lite_flash_write"):
+            if self.operation in ("dex_flash_write", "lite_flash_write", "std_flash_write"):
                 raise CalibrationError("Flash 写入正在备份、写入或回读，请等待完成后再退出")
             self.stop_event.set()
             return
@@ -249,7 +249,7 @@ class InspectionService:
             functions["dex_" + name] = lambda data, name=name: self._dex_action(name, data)
         functions["mono_verify"] = lambda data: self._dex_action("solve", {**data, "verify": True})
         for prefix, names in (("lite", ("environment", "capture", "noise", "import_dataset", "solve", "inspect_result", "flash_write")),
-                              ("std", ("environment", "import_video", "solve", "load_result"))):
+                              ("std", ("environment", "import_video", "solve", "load_result", "flash_read", "inspect_result", "flash_write"))):
             for name in names:
                 functions[prefix + '_' + name] = lambda data, prefix=prefix, name=name: self._calibration_action(prefix, name, data)
         if action not in functions:
@@ -294,6 +294,7 @@ class InspectionService:
         self._close_preview({})
         self.dex.invalidate_review()
         self.lite.invalidate_review()
+        self.std.invalidate_review()
         with self.lock:
             self.selected, self.payload, self.report = selected, None, None
             self.annotated, self.session_id = b"", ""
@@ -451,6 +452,13 @@ class InspectionService:
             service.solve(data, self.stop_event)
         elif name == 'load_result':
             self._load_calibration({'yaml_text': service.calibration_text(data.get('yaml_id'))})
+        elif name == 'inspect_result':
+            service.inspect_result(data, self.selected, self.stop_event)
+        elif name in ('flash_read', 'flash_write'):
+            # Clear stale calibration even if a write fails after activation.
+            self.payload, self.report, self.annotated = None, None, b''
+            method = service.read_device if name == 'flash_read' else service.flash
+            self.payload = method(data, self.selected, self.stop_event)
         self.notice = '任务结束，数据和结果保存在对应标定页面'
 
     def _prepare(self, data, source):
@@ -630,7 +638,7 @@ class InspectionService:
             return b""
 
     def close(self):
-        if self.operation in ("dex_flash_write", "lite_flash_write") and self.job:
+        if self.operation in ("dex_flash_write", "lite_flash_write", "std_flash_write") and self.job:
             self.job.join()
         self.stop_event.set()
         if self.job:

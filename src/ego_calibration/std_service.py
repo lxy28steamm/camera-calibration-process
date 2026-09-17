@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import json
+import copy
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import yaml
 
 from ego_calibration.backends.std_runner import DELIVERY, load_pipeline
 from ego_calibration.models import CalibrationError
+from ego_calibration import std_flash
 from ego_calibration.mono_service import child_environment
 from ego_calibration.workflow_service import WorkflowService, bounded
 
@@ -20,9 +23,91 @@ class StdService(WorkflowService):
         super().__init__(root, 'ego_std')
         self.backends = Path(__file__).with_name('backends')
         self.video_id = ''
+        self.review = None
+        self.review_token = ''
+        self.review_path = None
 
     def state(self):
-        return {**super().state(), 'video_id': self.video_id}
+        with self.lock:
+            return {**super().state(), 'video_id': self.video_id,
+                    'review': copy.deepcopy(self.review), 'review_token': self.review_token,
+                    'write_credential_configured': std_flash.credential_configured()}
+
+    def invalidate_review(self):
+        self.review, self.review_path, self.review_token = None, None, ''
+
+    def read_device(self, data, device, stop):
+        self.invalidate_review()
+        std_flash.require_device(device)
+        with self.task('backup', {}, stop, device=device) as directory:
+            with std_flash.connection(device) as backend:
+                blob, current = std_flash.read_current(backend)
+                std_flash.backup(directory, blob, current)
+            self.result['current'] = current
+        return current['calibration']
+
+    def inspect_result(self, data, device, stop):
+        self.invalidate_review()
+        std_flash.require_device(device)
+        text = data.get('yaml_text')
+        if not text:
+            text = self.file(data.get('yaml_id')).read_text(encoding='utf-8')
+        if not isinstance(text, str) or len(text.encode('utf-8')) > 8124:
+            raise CalibrationError('Ego-Std YAML 最大为 8124 字节')
+        with self.task('review', {}, stop, device=device) as directory:
+            path = directory / 'candidate.yaml'
+            std_flash.durable_write(path, text.encode('utf-8'))
+            summary = std_flash.validate_result(path)
+            with std_flash.connection(device) as backend:
+                blob, current = std_flash.read_current(backend)
+                std_flash.backup(directory, blob, current)
+            self.result['current'] = current
+            if current['protocol_version'] != 1:
+                raise CalibrationError('设备不支持所提供的写入协议版本，已保留现有标定备份')
+            serial = data.get('serial_number', '').strip() or current['calibration']['header'].get('serial_number', '')
+            std_flash.writer.encode_calibration_serial_number(serial)
+            std_flash.writer.build_kalibr_yaml_blob(path.read_bytes(), serial)
+            if stop.is_set():
+                raise CalibrationError('检查已停止，请重新检查')
+            self.review = {'device': {'identifier': device.identifier, 'serial': device.serial, 'label': device.label},
+                           'serial_number': serial, 'new': summary, 'current': current,
+                           'files': self.files(directory)}
+            self.review_path = path
+            self.review_token = uuid.uuid4().hex
+            self.result['review'] = self.review
+
+    def flash(self, data, device, stop):
+        if data.get('confirmed') is not True:
+            raise CalibrationError('请核对设备、标定序列号和 YAML 尺寸，并确认写入')
+        if not self.review_token or data.get('review_token') != self.review_token:
+            raise CalibrationError('请先重新检查待写入结果与目标设备')
+        review, path = copy.deepcopy(self.review), self.review_path
+        self.invalidate_review()  # One attempt per review, including failed attempts.
+        std_flash.require_device(device)
+        if device.identifier != review['device']['identifier'] or device.serial != review['device']['serial']:
+            raise CalibrationError('目标设备已改变，请重新检查')
+        summary = std_flash.validate_result(path)
+        if summary['sha256'] != review['new']['sha256']:
+            raise CalibrationError('待写入 YAML 已改变，请重新检查')
+        secret = std_flash.load_secret()
+        request = {'sha256': summary['sha256'], 'serial_number': review['serial_number']}
+        with self.task('flash', request, stop, device=device) as directory:
+            candidate = directory / 'candidate.yaml'
+            std_flash.durable_write(candidate, path.read_bytes())
+            if std_flash.digest(candidate.read_bytes()) != summary['sha256']:
+                raise CalibrationError('YAML 在准备期间发生变化，请重新检查')
+            with std_flash.connection(device) as backend:
+                blob, current = std_flash.read_current(backend)
+                if current['identity'] != review['current']['identity'] or current['sha256'] != review['current']['sha256']:
+                    raise CalibrationError('设备身份或当前标定已改变，请重新检查')
+                std_flash.backup(directory, blob, current)
+                if stop.is_set():
+                    raise CalibrationError('写入尚未开始，任务已停止')
+                self.progress = {'stage': '备份完成，正在写入并回读；请保持连接'}
+                result, payload = std_flash.write_verified(backend, candidate, review['serial_number'], directory, secret)
+                self.result.update(write=result, current=current, verified=True, calibration=payload)
+                self.progress = {'stage': '写入、激活及逐字节回读验证完成'}
+        return payload
 
     def check_environment(self, _data):
         command = ['bash', str(self.backends/'run.sh'), 'python', '-c', 'import rosbag, cv_bridge, kalibr_camera_calibration, kalibr_imu_camera_calibration; print("ready")']

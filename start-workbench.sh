@@ -6,6 +6,9 @@ if [[ -f "$workbench_root/config/local.env" ]]; then
   source "$workbench_root/config/local.env"
   set +a
 fi
+if [[ -f "$workbench_root/config/std-write.secret" ]]; then
+  export YCTC_XU_UNLOCK_SECRET_FILE="${YCTC_XU_UNLOCK_SECRET_FILE:-$workbench_root/config/std-write.secret}"
+fi
 export CAMERA_DATA_DIR="${CAMERA_DATA_DIR:-$workbench_root/data}"
 export CAMERA_WEB_HOST="${CAMERA_WEB_HOST:-auto}"
 for workbench_binary in "$workbench_root/camera-workbench-linux-x86_64.bin" "$workbench_root/dist/ego-calibration-linux-x86_64.bin"; do

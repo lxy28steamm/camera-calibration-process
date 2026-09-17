@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory() as staging:
     target=Path(staging)/'camera-workbench'
     target.mkdir()
     for directory in ('src','scripts','tests','docs','config'):
-        shutil.copytree(ROOT/directory,target/directory,ignore=shutil.ignore_patterns('__pycache__','*.pyc','*.egg-info','local.env'))
+        shutil.copytree(ROOT/directory,target/directory,ignore=shutil.ignore_patterns('__pycache__','*.pyc','*.egg-info','local.env','*.secret'))
     for file in ('pyproject.toml','README.md','start-workbench.sh','requirements-build.txt'):
         shutil.copy2(ROOT/file,target/file)
     shutil.copy2(args.binary,target/'camera-workbench-linux-x86_64.bin')

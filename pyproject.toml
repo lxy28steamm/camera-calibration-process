@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ego-calibration"
-version = "3.1.0"
+version = "3.2.0"
 description = "Portable camera inspection and calibration workbench"
 requires-python = ">=3.10"
 dependencies = [
@@ -32,4 +32,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-ego_calibration = ["resources/*.json", "resources/*.yaml", "web/*.html", "web/*.css", "web/*.js", "web/*.svg", "backends/*.py", "backends/*.sh", "backends/flash_tools/*", "backends/ego_std_delivery/*", "backends/ego_std_delivery/scripts/*", "backends/ego_std_delivery/bin/*", "backends/ego_std_delivery/docker/*", "backends/ego_std_delivery/patches/*", "backends/ego_std_delivery/third_party_notices/*"]
+ego_calibration = ["resources/*.json", "resources/*.yaml", "web/*.html", "web/*.css", "web/*.js", "web/*.svg", "backends/*.py", "backends/*.sh", "backends/flash_tools/*", "backends/ego_std_write/*.md", "backends/ego_std_delivery/*", "backends/ego_std_delivery/scripts/*", "backends/ego_std_delivery/bin/*", "backends/ego_std_delivery/docker/*", "backends/ego_std_delivery/patches/*", "backends/ego_std_delivery/third_party_notices/*"]
