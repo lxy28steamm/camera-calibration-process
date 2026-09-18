@@ -44,7 +44,7 @@ class CalibrationValidationUiTest(unittest.TestCase):
 
     def test_resolution_summary_uses_measured_image_not_common_calibration(self) -> None:
         payload = _std_payload()
-        payload["common_calibration"]["cam0"]["resolution"] = [1920, 1080]
+        payload["common_calibration"] = {"cam0": {"resolution": [1920, 1080]}}
         payload["uvc_preview"] = {"resolution": [3200, 1200]}
 
         self.window._calibration_loaded(("ego-std", payload))
@@ -101,7 +101,6 @@ class CalibrationValidationUiTest(unittest.TestCase):
     def test_large_rms_is_display_only_in_summary_list_and_dialog(self) -> None:
         payload = _std_payload()
         payload["metrics"]["stereo_rms"] = 20.0
-        payload["common_calibration"] = None
 
         self.window._calibration_loaded(("ego-std", payload))
 

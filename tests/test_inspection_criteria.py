@@ -59,7 +59,7 @@ class InspectionCriteriaTest(unittest.TestCase):
         for value in (None, "0.1", True, -1, float("nan"), float("inf")):
             payload = inspection_payload()
             payload["metrics"]["left_calibrate_rms"] = value
-            payload["common_calibration"]["metrics"] = {"left_calibrate_rms": 0.05}
+            payload["common_calibration"] = {"metrics": {"left_calibrate_rms": 0.05}}
             row = calibration_comparison(payload, acceptance, resolution_confirmed=True)["rows"][0]
             self.assertIsNone(row["historical_value"])
             self.assertIsNone(row["delta_px"])

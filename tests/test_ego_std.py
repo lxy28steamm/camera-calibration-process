@@ -101,6 +101,15 @@ class _XuDevice:
 
 
 class EgoStdCalibrationTest(unittest.TestCase):
+    def test_linux_scan_recognizes_sc235hgs_mic_as_ego_std(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "usb-YCTC_YCTC_SC235HGS_MIC_0152312181647-video-index0"
+            path.touch()
+            devices = _scan_linux_video_devices(Path(directory))
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0].kind, "ego-std")
+        self.assertEqual(devices[0].identifier, str(path))
+
     def test_linux_scan_identifies_yctc_video_device(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "usb-YCTC_YCTC_SC233HGS_0152312181647-video-index0"
@@ -126,7 +135,7 @@ class EgoStdCalibrationTest(unittest.TestCase):
         self.assertEqual(devices[0].model, "ZXCZ SC233HGS Dual")
         self.assertEqual(devices[0].transport, "UVC XU V5 · USB")
 
-    def test_reads_blob_and_appends_default_imu(self) -> None:
+    def test_reads_blob_without_default_calibration(self) -> None:
         identifier = "/dev/v4l/by-id/usb-ZXCZ_ZXCZ_SC233HGS_Dual_064014231235-video-index0"
         payload = read_calibration(identifier, query=_XuDevice(_calibration_blob()).query)
 
@@ -138,8 +147,7 @@ class EgoStdCalibrationTest(unittest.TestCase):
         self.assertEqual(payload["device_identity"]["usb_serial_number"], "064014231235")
         self.assertFalse(payload["device_identity"]["serials_match"])
         self.assertEqual(payload["device_identity"]["serial_comparison"], "unmapped")
-        self.assertEqual(payload["common_calibration"]["cam0"]["resolution"], [1920, 1080])
-        self.assertEqual(payload["common_calibration"]["imu0"]["update_rate"], 200.004061)
+        self.assertNotIn("common_calibration", payload)
 
     def test_extracts_usb_serial_from_identifiers(self) -> None:
         self.assertEqual(
@@ -159,6 +167,7 @@ class EgoStdCalibrationTest(unittest.TestCase):
         payload = read_calibration("test", query=_XuDevice(blob).query)
 
         self.assertEqual(payload["format"], "kalibr_camchain_imucam")
+        self.assertNotIn("common_calibration", payload)
         self.assertEqual(payload["header"]["schema_version"], 2)
         self.assertEqual(payload["kalibr_calibration"]["cam0"]["resolution"], [1600, 1200])
         self.assertEqual(payload["kalibr_calibration"]["cam1"]["resolution"], [1600, 1200])

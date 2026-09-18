@@ -8,6 +8,7 @@ import os
 import json
 import mimetypes
 import secrets
+import signal
 import shutil
 import threading
 import time
@@ -233,11 +234,12 @@ def existing_workbench(url: str) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="通用相机检测工作台（浏览器版）")
+    parser = argparse.ArgumentParser(description="相机检测网页服务（前端页面 + Python 后端）")
     parser.add_argument("--host", default=os.environ.get("CAMERA_WEB_HOST", "auto"), help="默认 auto，自动选择运行设备的局域网 IPv4；可指定固定 IP 或 127.0.0.1")
     parser.add_argument("--doctor", action="store_true", help="检查部署依赖并输出 JSON")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--foreground", action="store_true", help="本终端独立运行服务；端口占用时报错，按 Ctrl+C 退出")
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("CAMERA_DATA_DIR", str(Path.home() / "Documents" / "CameraWorkbench"))))
     parser.add_argument("--dex-project", type=Path, help="可选：只读列出旧项目数据，不用于加载执行代码")
     args = parser.parse_args()
@@ -257,28 +259,44 @@ def main() -> int:
         parser.error("请指定实际局域网 IP，例如 --host 192.168.1.20")
     service = InspectionService(args.data_dir, args.dex_project)
     url = f"http://{args.host}:{args.port}"
+    server, browser_timer, previous_sigint = None, None, None
     try:
-        server = CameraWebServer((args.host, args.port), service)
-    except OSError as exc:
-        if exc.errno != errno.EADDRINUSE:
-            raise CalibrationError(f"无法监听 {url}：{exc}") from None
-        if existing_workbench(url):
-            print(f"相机检测工作台已运行：{url}", flush=True)
-            if not args.no_browser:
-                webbrowser.open(url)
-            return 0
-        raise CalibrationError(f"地址 {url} 已被占用；请检查正在运行的实例或指定其他 --port") from None
-    url = f"http://{args.host}:{server.server_port}"
-    print(f"相机检测工作台：{url}\n报告目录：{service.directory}", flush=True)
-    if not args.no_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-    try:
+        try:
+            server = CameraWebServer((args.host, args.port), service)
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE:
+                raise CalibrationError(f"无法监听 {url}：{exc}") from None
+            if args.foreground:
+                print(f"启动失败：{url} 已被占用。此终端没有启动新服务；请先停止旧服务，再重新运行。", flush=True)
+                return 2
+            if existing_workbench(url):
+                print(f"相机检测工作台已运行：{url}", flush=True)
+                if not args.no_browser:
+                    webbrowser.open(url)
+                return 0
+            raise CalibrationError(f"地址 {url} 已被占用；请检查正在运行的实例或指定其他 --port") from None
+        url = f"http://{args.host}:{server.server_port}"
+        print(f"相机检测网页：{url}\n数据目录：{service.directory}\n按 Ctrl+C 停止服务并释放相机。", flush=True)
+        if not args.no_browser:
+            browser_timer = threading.Timer(0.5, lambda: webbrowser.open(url))
+            browser_timer.start()
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        print("正在停止任务并释放相机；如正在写入标定，将等待写入完成。", flush=True)
     finally:
-        service.close()
-        server.server_close()
+        try:
+            if browser_timer is not None:
+                browser_timer.cancel()
+            try:
+                if server is not None:
+                    server.server_close()
+            finally:
+                service.close()
+        finally:
+            if previous_sigint is not None:
+                signal.signal(signal.SIGINT, previous_sigint)
+    print("网页服务已停止。", flush=True)
     return 0
 
 

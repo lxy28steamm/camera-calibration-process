@@ -2,14 +2,20 @@
 
 统一管理普通 UVC、拼接双目、Ego / DepthAI 与 Dex 的检测、采集、标定、复测和报告。网页运行于相机所在 Linux 主机，适配电脑及窄屏浏览器。
 
-快速开始：
+源码网页版启动（终端前台运行）：
 
 ```bash
-bash start-workbench.sh --doctor
-bash start-workbench.sh --no-browser
+cd /home/lskj/ego-calibartion
+bash start-web.sh
 ```
 
-启动后访问终端显示的 `http://运行设备IP:8765`，每次启动自动选择本机局域网地址，无需登录。发布包自带可执行文件；纯源码目录先运行 `bash scripts/install-linux.sh`。基础单目标定内置 OpenCV，无需 ROS；高级 Kalibr 模型使用可选环境。移动整个目录即可保留默认 `data/` 中的数据。
+启动后访问终端显示的 `http://运行设备IP:8765`；用完在同一终端按 **Ctrl+C**，停止服务并释放相机，已保存的数据保留。每次启动自动选择本机局域网地址，无需登录。`start-web.sh` 直接运行本目录的 Python 后端和前端源码，默认使用 `.venv` 和 `data/`；支持 `--doctor` 自检。没有源码环境时先运行 `bash scripts/install-linux.sh`。
+
+前端位于 `src/ego_calibration/web/`，修改后刷新网页即可；后端修改后需停止并重新运行。若端口被旧服务占用，启动会明确报错，请先停止旧实例。旧 `start-workbench.sh` 优先使用打包的 `.bin`，源码修改请使用 `start-web.sh`。
+
+设备列表分别显示 Ego-Std 的标定 SN 和串口协议返回的相机 SN；协议 SN 不可读时显示“未读取”，不使用 USB 序列号替代。拔插设备后重新扫描会刷新编号并清除旧标定；内置摄像头被自动选中后，新接入一台标定相机时会切换到新相机。
+
+基础单目标定内置 OpenCV，无需 ROS；高级 Kalibr 模型使用可选环境。移动整个目录即可保留默认 `data/` 中的数据。发布包的二进制启动与部署方式见下文文档。
 
 详见 [Linux 部署与完整操作流程](docs/LINUX.md)，包含局域网/SSH 访问、真实尺寸、相机支持范围、标定板参数、复测标准、Kalibr 部署和旧数据迁移。
 

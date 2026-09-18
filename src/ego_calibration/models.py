@@ -17,3 +17,6 @@ class CameraDevice:
     transport: str = ""
     path: str = ""
     accessible: bool = True
+    calibration_serial: str = ""
+    camera_serial: str = ""
+    serial_error: str = ""

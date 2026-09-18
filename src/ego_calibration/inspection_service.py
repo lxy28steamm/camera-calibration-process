@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from ego_calibration import ego_lite, ego_std
+from ego_calibration.ego_std_serial import read_camera_serial
 from ego_calibration.mono_service import MonoService as DexService, MonoSettings as DexSettings
 from ego_calibration.devices import scan_uvc_devices, capabilities
 from ego_calibration.inspection import InspectionSettings, StereoInspector, write_report
@@ -197,6 +198,7 @@ class InspectionService:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.devices: list[CameraDevice] = []
+        self.closing = False
         self.selected: CameraDevice | None = None
         self.payload: dict[str, Any] | None = None
         self.live: LiveCamera | None = None
@@ -255,6 +257,8 @@ class InspectionService:
         if action not in functions:
             raise CalibrationError("未知操作")
         with self.lock:
+            if self.closing:
+                raise CalibrationError("网页服务正在停止，请重新启动后再操作")
             if self.operation:
                 raise CalibrationError("当前任务尚未结束，请先停止或等待完成")
             self.operation, self.error = action, ""
@@ -274,6 +278,8 @@ class InspectionService:
                 self.operation = ""
 
     def _scan(self, _data):
+        self._close_preview({})
+        previous_identifiers = {device.identifier for device in self.devices}
         found, warnings = [], []
         for scanner in (ego_std.scan_devices, ego_lite.scan_devices):
             try:
@@ -281,26 +287,76 @@ class InspectionService:
             except Exception as exc:
                 warnings.append(str(exc))
         found.extend(scan_uvc_devices(found))
+        found = [self._std_serials(device) for device in found]
+        new_calibration_devices = [device for device in found
+                                   if device.identifier not in previous_identifiers
+                                   and capabilities(device)["read_calibration"]]
+        switched = False
         with self.lock:
             self.devices = found
-            if self.selected is None and found:
-                self.selected = found[0]
+        if self.selected is None or self.selected.identifier != "offline":
+            identifier = self.selected.identifier if self.selected else None
+            selected = next((device for device in found if device.identifier == identifier),
+                            found[0] if found else None)
+            # A scan while the external camera was unplugged may have selected
+            # the laptop camera. Select one newly connected calibration camera.
+            if self.selected and self.selected.kind == "uvc" and len(new_calibration_devices) == 1:
+                selected = new_calibration_devices[0]
+                switched = True
+            # Replugged cameras can share a USB descriptor SN and device path.
+            self._set_device(selected)
+        with self.lock:
             self.notice = f"发现 {len(found)} 台设备" + ("；" + "；".join(warnings) if warnings else "")
+            if switched:
+                self.notice += "；已选择新接入的标定相机，点击“读取标定”查看参数"
+
+    def _std_serials(self, device, payload=None):
+        if device.kind not in ("ego-std", "ego-std-235"):
+            return device
+        calibration_serial, camera_serial, errors = "", "", []
+        try:
+            calibration = payload if payload is not None else ego_std.read_calibration(device.identifier)
+            calibration_serial = str(calibration.get("header", {}).get("serial_number", "")).strip()
+        except Exception as exc:
+            errors.append(f"标定 SN：{exc}")
+        try:
+            camera_serial = read_camera_serial(device.identifier)
+            if camera_serial == device.serial and camera_serial != calibration_serial:
+                camera_serial = ""
+                errors.append("SN 接口返回 USB 序列号，未确认独立相机 SN")
+        except Exception as exc:
+            errors.append(f"相机 SN：{exc}")
+        return replace(device, calibration_serial=calibration_serial,
+                       camera_serial=camera_serial, serial_error="；".join(errors))
+
+    def _update_std_serials(self, payload):
+        selected = self._std_serials(self.selected, payload)
+        with self.lock:
+            self.selected = selected
+            self.devices = [selected if d.identifier == selected.identifier else d for d in self.devices]
+            payload.setdefault("device_identity", {}).update(
+                camera_serial_number=selected.camera_serial,
+                camera_serial_source="uart_sn_0x0d" if selected.camera_serial else "",
+                camera_serial_error=selected.serial_error,
+            )
 
     def _select(self, data):
         selected = next((d for d in self.devices if d.identifier == data.get("identifier")), None)
         if selected is None:
             raise CalibrationError("设备不在扫描结果中，请重新扫描")
+        self._set_device(selected)
+
+    def _set_device(self, selected):
         self._close_preview({})
         self.dex.invalidate_review()
         self.lite.invalidate_review()
         self.std.invalidate_review()
         with self.lock:
             self.selected, self.payload, self.report = selected, None, None
-            self.annotated, self.session_id = b"", ""
+            self.annotated, self.sample_preview, self.session_id, self.elapsed = b"", b"", "", 0.0
             self.health = None
             self.notice = "已选择设备，可检查画面与帧率，或按工作流采集标定板"
-            if selected.kind == "dex-mono":
+            if selected and selected.kind == "dex-mono":
                 self.notice = "已选择 Dex 单目，可预览、录制并求解内参，或读取 Flash 中的标定"
 
     def _read(self, _data):
@@ -313,6 +369,8 @@ class InspectionService:
         self._close_preview({})
         reader = ego_lite.read_calibration if self.selected.kind == "ego-lite" else ego_std.read_calibration
         payload = reader(self.selected.identifier)
+        if self.selected.kind in ("ego-std", "ego-std-235"):
+            self._update_std_serials(payload)
         with self.lock:
             self.payload = payload
             self.report, self.annotated = None, b""
@@ -459,6 +517,7 @@ class InspectionService:
             self.payload, self.report, self.annotated = None, None, b''
             method = service.read_device if name == 'flash_read' else service.flash
             self.payload = method(data, self.selected, self.stop_event)
+            self._update_std_serials(self.payload)
         self.notice = '任务结束，数据和结果保存在对应标定页面'
 
     def _prepare(self, data, source):
@@ -638,11 +697,15 @@ class InspectionService:
             return b""
 
     def close(self):
+        with self.lock:
+            self.closing = True
         if self.operation in ("dex_flash_write", "lite_flash_write", "std_flash_write") and self.job:
             self.job.join()
         self.stop_event.set()
         if self.job:
-            self.job.join(10)
+            # Workers own subprocess cleanup (up to 12 s for Kalibr cancellation).
+            # Exiting earlier can leave an independent child process running.
+            self.job.join()
         self._close_preview({})
 
 

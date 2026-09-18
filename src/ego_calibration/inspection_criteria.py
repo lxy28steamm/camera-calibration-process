@@ -36,7 +36,6 @@ def inspection_criteria(settings, stats):
 
 def calibration_comparison(payload, acceptance, *, resolution_confirmed):
     # Only consume fields with a known meaning in the device blob schema.
-    # Bundled common_calibration is a reference configuration, not device evidence.
     metrics = payload.get("metrics", {}) if payload.get("format") == "stereo_calibration" else {}
 
     def historical(field):
@@ -64,7 +63,7 @@ def calibration_comparison(payload, acceptance, *, resolution_confirmed):
         "limit": None, "status": "reference", "note": "设备保存的联合标定拟合误差；本次未重新联合标定，无同口径复测值。",
     })
     return {
-        "reference": "本次使用的设备 / 导入标定记录，未使用附带 common_calibration 参考配置",
+        "reference": "本次使用的设备 / 导入标定记录",
         "calibration_serial": payload.get("header", {}).get("serial_number") or payload.get("device", {}).get("mxid"),
         "historical_sample_count": historical("sample_count"),
         "parameters_fixed": True,

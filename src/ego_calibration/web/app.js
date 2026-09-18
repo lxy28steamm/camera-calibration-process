@@ -8,6 +8,10 @@ const labels = {pass: '通过', fail: '超出阈值', incomplete: '未完成', r
 const form = $('settings-form');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const number = (value, digits=2) => Number.isFinite(value) ? value.toFixed(digits) : '—';
+function deviceLabel(device) {
+  if (!['ego-std','ego-std-235'].includes(device.kind) || device.identifier === 'offline') return device.label;
+  return `Ego-Std · 标定 SN：${device.calibration_serial || '未读取'} · 相机 SN：${device.camera_serial || '未读取'}`;
+}
 const previewPlayer = new CameraPreview($('camera-image'), fps=>{
   $('camera-image').classList.remove('hidden'); $('camera-empty').classList.add('hidden');
   $('preview-fps').textContent=`网页预览 ${number(fps,1)} FPS`;
@@ -155,9 +159,9 @@ function renderCalibration() {
   }
   setDimensions(payload);
   const data = [
-    ['设备', state.selected?.label || '—'], ['标定格式', payload.format || 'DepthAI EEPROM'],
-    ['设备序列号', payload.device_identity?.usb_serial_number || payload.device?.mxid || '—'],
-    ['标定 / 固件 SN', payload.header?.serial_number || '—'],
+    ['设备', state.selected ? deviceLabel(state.selected) : '—'], ['标定格式', payload.format || 'DepthAI EEPROM'],
+    ['相机 SN（协议读取）', payload.device_identity?.camera_serial_number || payload.device?.mxid || '未读取'],
+    ['标定 SN', payload.header?.serial_number || '—'],
     ['标定样本数', payload.metrics?.sample_count ?? '未提供'],
     ['双目基线', payload.metrics?.baseline_mm ? number(payload.metrics.baseline_mm,3)+' mm' : '见复测报告'],
     ['左 / 右历史 RMS', `${number(payload.metrics?.left_calibrate_rms,3)} / ${number(payload.metrics?.right_calibrate_rms,3)} px（仅展示）`],
@@ -220,9 +224,10 @@ function renderReport() {
 }
 function render() {
   const key=JSON.stringify(state.devices);
-  if (key!==deviceKey) {deviceKey=key; $('device').innerHTML='<option value="">选择设备</option>'+(state.devices||[]).map(device=>`<option value="${esc(device.identifier)}">${esc(device.label)}</option>`).join('');}
+  if (key!==deviceKey) {deviceKey=key; $('device').innerHTML='<option value="">选择设备</option>'+(state.devices||[]).map(device=>`<option value="${esc(device.identifier)}" title="${esc(device.serial_error || deviceLabel(device))}">${esc(deviceLabel(device))}</option>`).join('');}
   if (state.selected?.identifier!=='offline') $('device').value=state.selected?.identifier || '';
-  $('device-detail').textContent=state.selected ? `${state.selected.model || state.selected.kind} · ${state.selected.serial || state.selected.identifier}` : '普通 UVC / 拼接双目 / Ego / DepthAI / Dex';
+  $('device').title=state.selected ? [deviceLabel(state.selected),state.selected.serial_error].filter(Boolean).join('；') : '';
+  $('device-detail').textContent=state.selected ? (['ego-std','ego-std-235'].includes(state.selected.kind) ? state.selected.serial_error || state.selected.model : `${state.selected.model || state.selected.kind} · ${state.selected.serial || state.selected.identifier}`) : '普通 UVC / 拼接双目 / Ego / DepthAI / Dex';
   $('notice').textContent=state.notice;
   const error=state.error || state.stream?.error || state.stream?.preview_error;
   $('error-banner').classList.toggle('hidden',!error); $('error-banner').textContent=error || '';
@@ -233,8 +238,7 @@ function render() {
   $('frame-caption').textContent=stream?.sync || '实时画面用于调整标定板位置；检测叠加图在下方单独显示';
   const calibrationSize=calibrationResolution(state.calibration);
   const measured=actual || (state.health?.device?.identifier === state.selected?.identifier ? state.health?.resolution : null);
-  const referenceSize=state.calibration?.common_calibration?.cam0?.resolution;
-  $('resolution-summary').textContent=`${actual ? '当前画面' : '最近基础检查'}实测：${measured ? `单目 ${measured[0]/2}×${measured[1]}，双目 ${measured[0]}×${measured[1]}` : '尚未测量'}。当前标定参数对应的单目分辨率：${calibrationSize ? calibrationSize.join('×') : '未提供'}。${referenceSize ? `附带 common_calibration 参考配置：单目 ${referenceSize.join('×')}，不用于确认当前设备内参的分辨率。` : ''}`;
+  $('resolution-summary').textContent=`${actual ? '当前画面' : '最近基础检查'}实测：${measured ? `单目 ${measured[0]/2}×${measured[1]}，双目 ${measured[0]}×${measured[1]}` : '尚未测量'}。当前标定参数对应的单目分辨率：${calibrationSize ? calibrationSize.join('×') : '未提供'}。`;
   const globalText=state.busy ? ({scan:'正在扫描',read:'正在读取',inspect:'现场检测中',video:'视频分析中',replay:'重新分析中'}[state.operation] || '正在处理') : state.report?.summary || (state.calibration?'标定已就绪':state.selected?'设备已选择':'等待设备');
   badge($('global-status'),state.busy?'running':state.report?.status,globalText);
   $('step-device').className=state.calibration?'complete':'current'; $('step-board').className=stream?.resolution?'complete':state.calibration?'current':'';

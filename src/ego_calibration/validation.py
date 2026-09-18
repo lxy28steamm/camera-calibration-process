@@ -205,7 +205,6 @@ def _validate_ego_std(payload: dict[str, Any]) -> list[ValidationCheck]:
     else:
         _validate_stereo_payload(payload, checks)
 
-    # Std / Std-235 只检验设备实读标定，common_calibration 是内置默认值。
     return checks
 
 

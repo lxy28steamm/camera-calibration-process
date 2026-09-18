@@ -87,14 +87,6 @@ def _std_payload() -> dict[str, object]:
             "pitch_deg": 0.0,
             "roll_deg": 0.0,
         },
-        "common_calibration": {
-            "cam0": {"T_cam_imu": _identity(4)},
-            "cam1": {
-                "T_cam_imu": _identity(4),
-                "T_cn_cnm1": _identity(4),
-            },
-            "imu0": {"T_i_b": _identity(4)},
-        },
     }
 
 
@@ -127,14 +119,6 @@ def _std_kalibr_payload() -> dict[str, object]:
                 "T_cam_imu": _identity(4),
                 "T_cn_cnm1": _identity(4),
             },
-        },
-        "common_calibration": {
-            "cam0": {"T_cam_imu": _identity(4)},
-            "cam1": {
-                "T_cam_imu": _identity(4),
-                "T_cn_cnm1": _identity(4),
-            },
-            "imu0": {"T_i_b": _identity(4)},
         },
     }
 
@@ -210,7 +194,7 @@ class CalibrationValidationTest(unittest.TestCase):
         )
         self.assertIn("未提供两套编号的映射", identity_check.detail)
 
-    def test_std_variants_ignore_missing_or_invalid_common_calibration(self) -> None:
+    def test_std_variants_ignore_legacy_common_calibration(self) -> None:
         for kind in ("ego-std", "ego-std-235"):
             for make_payload in (_std_payload, _std_kalibr_payload):
                 original = make_payload()
@@ -218,10 +202,7 @@ class CalibrationValidationTest(unittest.TestCase):
                 for common in (None, {}, "invalid", {"imu0": {"T_i_b": [[0.0] * 4] * 4}}):
                     with self.subTest(kind=kind, format=original["format"], common=common):
                         payload = copy.deepcopy(original)
-                        if common is None:
-                            del payload["common_calibration"]
-                        else:
-                            payload["common_calibration"] = common
+                        payload["common_calibration"] = common
                         self.assertEqual(validate_calibration(kind, payload), expected)
 
     def test_displays_each_stored_rms_without_applying_a_quality_threshold(self) -> None:
@@ -266,7 +247,7 @@ class CalibrationValidationTest(unittest.TestCase):
     def test_missing_rms_is_unavailable_and_never_uses_common_calibration(self) -> None:
         payload = _std_payload()
         del payload["metrics"]["stereo_rms"]
-        payload["common_calibration"]["metrics"] = {"stereo_rms": 0.01}
+        payload["common_calibration"] = {"metrics": {"stereo_rms": 0.01}}
 
         report = validate_calibration("ego-std", payload)
 

@@ -3,14 +3,12 @@ from __future__ import annotations
 import ast
 import ctypes
 import hashlib
-import json
 import math
 import os
 import platform
 import struct
 import zlib
 from collections.abc import Callable
-from importlib import resources
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlparse
@@ -96,7 +94,6 @@ def read_calibration(
             else "unavailable"
         ),
     }
-    payload["common_calibration"] = _read_common_calibration()
     return payload
 
 
@@ -687,20 +684,6 @@ def _is_valid_serial_field(value: bytes) -> bool:
             return False
         has_text = True
     return has_text
-
-
-def _read_common_calibration() -> dict[str, Any]:
-    try:
-        resource = resources.files("ego_calibration.resources").joinpath(
-            "ego_std_default_imu.json"
-        )
-        payload = json.loads(resource.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise CalibrationError(f"Ego-Std 默认 IMU 标定无效：{exc}") from exc
-    required = {"cam0", "cam1", "imu0"}
-    if not isinstance(payload, dict) or not required <= payload.keys():
-        raise CalibrationError("Ego-Std 默认 IMU 标定缺少 cam0、cam1 或 imu0")
-    return payload
 
 
 def _crc16_modbus(data: bytes) -> int:

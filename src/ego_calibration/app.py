@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
             "ego-lite": "Luxonis DepthAI 2.32：通过 readCalibration2() 读取设备 EEPROM。",
             "ego-std": (
                 "UVC XU V5 Unit 10：兼容 OpenCV schema v1 / Kalibr YAML schema v2，"
-                "校验 CRC16/CRC32 并附加默认 IMU 标定。"
+                "校验 CRC16/CRC32 并解析设备标定。"
             ),
         }
         self.protocol.setText(protocol[kind])
@@ -718,7 +718,7 @@ class MainWindow(QMainWindow):
                     ("单目标定分辨率", calibration_resolution),
                     ("单目画面分辨率", mono_text),
                     ("双目 UVC 输出", video_text),
-                    ("检验数据来源", "设备实读标定（不使用 common_calibration）"),
+                    ("检验数据来源", "设备实读标定"),
                 ]
             )
         for key, value in rows:
