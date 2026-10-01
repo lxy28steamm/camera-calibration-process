@@ -21,7 +21,7 @@ from ego_calibration.models import CalibrationError, CameraDevice
 from ego_calibration.capture import EGO_STD_STEREO_RESOLUTIONS, _is_video_frame, _open_video_capture, uvc_sources
 from ego_calibration.validation import validate_calibration
 from ego_calibration.lite_service import LiteService
-from ego_calibration.std_service import StdService
+from ego_calibration.std_service import StdBatchService, StdService
 
 
 def jpeg(frame: np.ndarray, width: int = 1600) -> bytes:
@@ -216,6 +216,7 @@ class InspectionService:
         self.dex = DexService(self.directory, dex_project)
         self.lite = LiteService(self.directory)
         self.std = StdService(self.directory)
+        self.std_batch = StdBatchService(self.directory)
 
     def state(self) -> dict[str, Any]:
         with self.lock:
@@ -230,7 +231,8 @@ class InspectionService:
                 "selected": asdict(self.selected) if self.selected else None,
                 "calibration": self.payload,
                 "validation": [asdict(c) for c in validation.checks] if validation else [],
-                "busy": bool(self.operation), "operation": self.operation,
+                "busy": bool(self.operation) or self.std_batch.active,
+                "operation": self.operation or ("std_batch" if self.std_batch.active else ""),
                 "error": self.error, "notice": self.notice,
                 "stream": self.live.state() if self.live else None,
                 "frame_mode": "sample" if self.annotated else "live",
@@ -238,6 +240,7 @@ class InspectionService:
                 "report": report, "session_id": self.session_id, "elapsed_s": self.elapsed,
                 "dex": self.dex.state(),
                 "lite": self.lite.state(), "std": self.std.state(),
+                "std_batch": self.std_batch.state(),
             })
 
     def dispatch(self, action: str, data: dict[str, Any]) -> None:
@@ -245,13 +248,16 @@ class InspectionService:
             if self.operation in ("dex_flash_write", "lite_flash_write", "std_flash_write"):
                 raise CalibrationError("Flash 写入正在备份、写入或回读，请等待完成后再退出")
             self.stop_event.set()
+            self.std_batch.cancel()
             return
+        if self.std_batch.active:
+            raise CalibrationError("Ego-Std 批量标定正在运行，请等待或停止批次后再操作")
         functions = {"scan": self._scan, "health": self._health, "layout": self._layout, "select": self._select, "read": self._read, "preview": self._preview, "close_preview": self._close_preview, "inspect": self._inspect, "video": self._video, "replay": self._replay, "load_calibration": self._load_calibration}
         for name in ("preview", "record", "close", "solve", "import_video", "inspect_yaml", "flash_probe", "flash_read", "flash_write"):
             functions["dex_" + name] = lambda data, name=name: self._dex_action(name, data)
         functions["mono_verify"] = lambda data: self._dex_action("solve", {**data, "verify": True})
         for prefix, names in (("lite", ("environment", "capture", "noise", "import_dataset", "solve", "inspect_result", "flash_write")),
-                              ("std", ("environment", "import_video", "solve", "load_result", "flash_read", "inspect_result", "flash_write"))):
+                              ("std", ("environment", "import_video", "auto_process", "batch_start", "solve", "load_result", "flash_read", "inspect_result", "flash_write"))):
             for name in names:
                 functions[prefix + '_' + name] = lambda data, prefix=prefix, name=name: self._calibration_action(prefix, name, data)
         if action not in functions:
@@ -506,6 +512,12 @@ class InspectionService:
                 service.flash(data, self.selected, self.stop_event)
         elif name == 'import_video':
             service.import_video(data, self.directory/'uploads', self.stop_event)
+        elif name == 'auto_process':
+            service.import_video(data, self.directory/'uploads', self.stop_event)
+            solve_data = {**data, 'video_id': service.video_id, 'stage': 'imu'}
+            service.solve(solve_data, self.stop_event)
+        elif name == 'batch_start':
+            self.std_batch.start(data, self.directory/'uploads')
         elif name == 'solve':
             service.solve(data, self.stop_event)
         elif name == 'load_result':
@@ -702,6 +714,7 @@ class InspectionService:
         if self.operation in ("dex_flash_write", "lite_flash_write", "std_flash_write") and self.job:
             self.job.join()
         self.stop_event.set()
+        self.std_batch.close()
         if self.job:
             # Workers own subprocess cleanup (up to 12 s for Kalibr cancellation).
             # Exiting earlier can leave an independent child process running.

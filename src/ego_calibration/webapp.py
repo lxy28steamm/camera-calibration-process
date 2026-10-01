@@ -146,6 +146,19 @@ class CameraRequestHandler(BaseHTTPRequestHandler):
                         shutil.copyfileobj(stream, self.wfile, length=1024*1024)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+            elif path.startswith("/std-batch-files/"):
+                target = self.server.service.std_batch.file(path.removeprefix("/std-batch-files/"))
+                self.send_response(200)
+                self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
+                self.send_header("Content-Length", str(target.stat().st_size))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(target.name))
+                self.end_headers()
+                try:
+                    with target.open("rb") as stream:
+                        shutil.copyfileobj(stream, self.wfile, length=1024*1024)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
             elif path == "/api/frame.jpg":
                 frame = self.server.service.frame()
                 self._send(frame, "image/jpeg", 200 if frame else 204)
