@@ -143,7 +143,14 @@ class StdService(WorkflowService):
             raise CalibrationError('首个关键帧前未检测到 YCTC SEI，普通 H.264 不能用于相机—IMU 标定')
         with self.task('import', {'filename': source.name, 'source_path': str(source)}, stop) as directory:
             destination = directory/'recording.h264'
-            shutil.copy2(source, destination)
+            # Uploaded videos already occupy the persistent uploads directory.
+            # Move them into their import record instead of keeping a second
+            # full-size copy. Files selected by a local path still need copying
+            # so the workflow owns a stable input file.
+            if source.is_relative_to(uploads.resolve()):
+                shutil.move(str(source), str(destination))
+            else:
+                shutil.copy2(source, destination)
             self.video_id = self.file_id(destination)
             self.result['video_id'] = self.video_id
 
